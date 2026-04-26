@@ -8,17 +8,8 @@ services:
     restart: unless-stopped
     ports:
       - "5000:5000"
-    environment:
-      # URL вашего Synapse сервера (внутренний адрес Docker)
-      # Если Synapse в том же docker-compose, используйте имя сервиса 'synapse'
-      # Формат: http://<имя_сервиса>:<порт>
-      - SYNAPSE_URL=http://synapse:8008
-      
-      # Имя вашего Matrix сервера (домен)
-      - MATRIX_SERVER_NAME=your-domain.com
-      
-      # Секретный ключ для сессий Flask (смените на случайную строку!)
-      - SECRET_KEY=super-secret-key-change-me-in-production
+    env_file:
+      - .env
     networks:
       - synapse-network
     healthcheck:
