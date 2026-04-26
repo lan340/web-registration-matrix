@@ -1,43 +1,80 @@
-```
-# Environment files
+# Docker related
+.dockerenv
+.dockerinit
+*.dockerignore
+
+# Environment variables
+.env
 .env.local
 .env.*
 
-# Dependencies and build artifacts
-node_modules/
-dist/
-build/
-target/
-.venv/
-venv/
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Python specific (if applicable)
 __pycache__/
 *.pyc
-*.class
-*.o
-*.obj
+*.pyo
+*.pyd
+.Python
 *.so
-*.dll
-*.exe
 
-# Editor/IDE files
+# Virtual environments
+venv/
+.venv/
+env/
+.ENV
+
+# Node.js specific (if applicable)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+build/
+dist/
+target/
+
+# IDE specific
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
 
-# Logs and cache
-*.log
-*.tmp
-.mypy_cache/
-.pytest_cache/
+# Coverage reports
 coverage/
 htmlcov/
 .coverage
 
-# System files
-.DS_Store
-Thumbs.db
+# MyPy cache
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pytest cache
+.pytest_cache/
+
+# Gradle
+.gradle/
+
+# Compiled binary files
+*.exe
+*.dll
+*.so
+*.a
+*.o
+*.obj
+*.out
 
 # Compressed files
 *.zip
@@ -62,4 +99,3 @@ Thumbs.db
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-```
