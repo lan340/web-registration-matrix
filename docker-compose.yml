@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # Сервис панели регистрации
+  matrix-registration-panel:
+    build: .
+    container_name: matrix-registration-panel
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      # URL вашего Synapse сервера (внутренний адрес Docker)
+      # Если Synapse в том же docker-compose, используйте имя сервиса 'synapse'
+      # Формат: http://<имя_сервиса>:<порт>
+      - SYNAPSE_ADMIN_URL=http://synapse:8008
+      
+      # Имя вашего Matrix сервера (домен)
+      - MATRIX_SERVER_NAME=your-domain.com
+      
+      # Токен администратора Synapse (обязательно!)
+      # Получите через: curl -X POST 'http://localhost:8008/_synapse/admin/v1/login' 
+      # -H 'Content-Type: application/json' -d '{"type":"login_token","user":"@admin:your-domain.com"}'
+      # Или создайте в файле конфигурации synapse через registration_shared_secret
+      - SYNAPSE_ADMIN_ACCESS_TOKEN=your-admin-access-token-here
+      
+      # Секретный ключ для сессий Flask (смените на случайную строку!)
+      - SECRET_KEY=super-secret-key-change-me-in-production
+      
+      # Путь к базе данных внутри контейнера
+      - DATABASE_URL=/app/data/codes.db
+    volumes:
+      # Сохранение базы данных кодов между перезапусками
+      - registration-panel-data:/app/data
+    networks:
+      - synapse-network
+    depends_on:
+      - synapse
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Пример конфигурации Synapse (если у вас его еще нет в compose)
+  # Если Synapse уже есть, закомментируйте или удалите этот блок
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: synapse
+    restart: unless-stopped
+    # ports:
+    #   - "8008:8008"  # Раскомментируйте если нужен прямой доступ
+    environment:
+      - SYNAPSE_SERVER_NAME=your-domain.com
+      - SYNAPSE_REPORT_STATS=no
+    volumes:
+      - synapse-data:/data
+    networks:
+      - synapse-network
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8008/_matrix/client/versions"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+
+volumes:
+  registration-panel-data:
+    driver: local
+  synapse-data:
+    driver: local
+
+networks:
+  synapse-network:
+    driver: bridge
