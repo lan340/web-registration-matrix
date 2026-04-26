@@ -57,17 +57,9 @@ python app.py
 
 ## Получение токена администратора Synapse
 
-Для работы приложения нужен токен администратора Matrix Synapse. Получите его через API:
+Для работы приложения **не требуется** токен администратора. Приложение использует публичный Matrix Client API для регистрации, который не требует аутентификации.
 
-```bash
-curl -X POST 'http://localhost:8008/_synapse/admin/v1/login' \
-  -H 'Content-Type: application/json' \
-  -d '{"type": "m.login.password", "identifier": {"user": "admin"}, "password": "ваш_пароль"}'
-```
-
-Используйте поле `access_token` из ответа в переменной окружения `SYNAPSE_ADMIN_ACCESS_TOKEN`.
-
-**Альтернативно:** Если вы используете `synapse-admin`, токен можно получить там или создать отдельный токен для этого приложения.
+Всё, что нужно — это чтобы в Synapse была включена регистрация по токенам (`registration_requires_token: true`). Коды создаются и управляются только через `synapse-admin`.
 
 ## Настройка Synapse
 
@@ -142,7 +134,6 @@ enable_admin_api: true
 2. Убедитесь, что сервис находится в той же сети, что и Synapse
 3. Передайте правильные переменные окружения:
    - `SYNAPSE_URL` - внутренний адрес Synapse (например, `http://synapse:8008`)
-   - `SYNAPSE_ADMIN_ACCESS_TOKEN` - токен администратора
    - `MATRIX_SERVER_NAME` - домен вашего Matrix сервера
    - `FLASK_SECRET_KEY` - случайная строка для сессий Flask
 
@@ -158,22 +149,19 @@ services:
       - "5000:5000"
     environment:
       - SYNAPSE_URL=http://synapse:8008
-      - SYNAPSE_ADMIN_ACCESS_TOKEN=${SYNAPSE_ADMIN_TOKEN}
       - MATRIX_SERVER_NAME=matrix.example.com
       - FLASK_SECRET_KEY=${FLASK_SECRET}
     networks:
       - your-synapse-network
     restart: unless-stopped
-    depends_on:
-      - synapse
 ```
 
 ## Безопасность
 
-- Коды проверяются напрямую через Synapse API
-- Токен администратора хранится только в переменных окружения
+- Коды проверяются напрямую через Synapse Client API (без токена администратора)
 - Для продакшена рекомендуется использовать HTTPS (через reverse proxy)
 - Сессионные данные защищаются `FLASK_SECRET_KEY`
+- Приложение не хранит и не логирует пароли пользователей
 
 ## Лицензия
 
