@@ -1,311 +1,79 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
-from flask_cors import CORS
+from flask import Flask, render_template, request, jsonify
 import requests
-import secrets
-import hashlib
-import json
 import os
-from datetime import datetime, timedelta
-import sqlite3
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(32)
-CORS(app)
 
 # Конфигурация
-SYNAPSE_ADMIN_URL = os.getenv('SYNAPSE_ADMIN_URL', 'http://localhost:8008')
-SYNAPSE_ADMIN_ACCESS_TOKEN = os.getenv('SYNAPSE_ADMIN_ACCESS_TOKEN', '')
-SERVER_NAME = os.getenv('MATRIX_SERVER_NAME', 'example.com')
-
-# База данных для кодов регистрации
-DB_PATH = 'registration_codes.db'
-
-def init_db():
-    """Инициализация базы данных для хранения кодов регистрации"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS registration_codes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            expires_at TIMESTAMP,
-            max_uses INTEGER DEFAULT 1,
-            current_uses INTEGER DEFAULT 0,
-            is_active BOOLEAN DEFAULT 1,
-            created_by TEXT
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS registration_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT NOT NULL,
-            username TEXT,
-            registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            success BOOLEAN
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def generate_registration_code(length=16):
-    """Генерация случайного кода регистрации"""
-    return secrets.token_urlsafe(length)
-
-def register_user_on_synapse(username, password, access_token):
-    """Регистрация пользователя в Synapse через Admin API"""
-    url = f"{SYNAPSE_ADMIN_URL}/_synapse/admin/v1/register"
-    
-    # Сначала получаем nonce
-    response = requests.get(url)
-    if response.status_code != 200:
-        return False, "Не удалось получить nonce от сервера"
-    
-    data = response.json()
-    nonce = data.get('nonce')
-    
-    # Вычисляем хеш
-    mac = hashlib.sha256()
-    mac.update(nonce.encode())
-    mac.update(b"\x00")
-    mac.update(username.encode())
-    mac.update(b"\x00")
-    mac.update(password.encode())
-    mac.update(b"\x00")
-    mac.update(b"admin")  # kind=admin для регистрации через админку
-    
-    hex_mac = mac.hexdigest()
-    
-    # Отправляем запрос на регистрацию
-    payload = {
-        "nonce": nonce,
-        "username": username,
-        "password": password,
-        "kind": "user",
-        "mac": hex_mac,
-        "admin": False
-    }
-    
-    headers = {
-        "Content-Type": "application/json"
-    }
-    
-    response = requests.post(url, json=payload, headers=headers)
-    
-    if response.status_code == 200:
-        return True, response.json()
-    else:
-        return False, response.text
+SYNAPSE_URL = os.getenv("SYNAPSE_URL", "http://synapse:8008")
+MATRIX_SERVER_NAME = os.getenv("MATRIX_SERVER_NAME", "localhost")
 
 @app.route('/')
 def index():
-    """Главная страница - форма регистрации"""
-    return render_template('register.html')
-
-@app.route('/admin')
-def admin_panel():
-    """Панель администратора"""
-    return render_template('admin.html')
-
-@app.route('/api/generate-code', methods=['POST'])
-def generate_code():
-    """Генерация нового кода регистрации"""
-    data = request.json
-    max_uses = data.get('max_uses', 1)
-    expires_in_hours = data.get('expires_in_hours', 24)
-    created_by = data.get('created_by', 'admin')
-    
-    code = generate_registration_code()
-    expires_at = datetime.now() + timedelta(hours=expires_in_hours)
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute('''
-            INSERT INTO registration_codes 
-            (code, expires_at, max_uses, created_by)
-            VALUES (?, ?, ?, ?)
-        ''', (code, expires_at, max_uses, created_by))
-        conn.commit()
-        
-        return jsonify({
-            'success': True,
-            'code': code,
-            'expires_at': expires_at.isoformat(),
-            'max_uses': max_uses
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        conn.close()
-
-@app.route('/api/validate-code', methods=['POST'])
-def validate_code():
-    """Проверка кода регистрации"""
-    data = request.json
-    code = data.get('code')
-    
-    if not code:
-        return jsonify({'valid': False, 'error': 'Код не предоставлен'}), 400
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT * FROM registration_codes 
-        WHERE code = ? AND is_active = 1
-    ''', (code,))
-    
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row:
-        return jsonify({'valid': False, 'error': 'Недействительный код'})
-    
-    # Проверка срока действия
-    if row['expires_at']:
-        expires_at = datetime.fromisoformat(row['expires_at'])
-        if datetime.now() > expires_at:
-            return jsonify({'valid': False, 'error': 'Срок действия кода истёк'})
-    
-    # Проверка количества использований
-    if row['current_uses'] >= row['max_uses']:
-        return jsonify({'valid': False, 'error': 'Код достиг лимита использований'})
-    
-    return jsonify({'valid': True})
+    return render_template('register.html', server_name=MATRIX_SERVER_NAME)
 
 @app.route('/api/register', methods=['POST'])
 def register():
-    """Регистрация пользователя с использованием кода"""
+    """
+    Регистрация пользователя через Matrix Client API с использованием registration_token.
+    Коды создаются в synapse-admin (Awesometechnologies).
+    """
     data = request.json
-    code = data.get('code')
     username = data.get('username')
     password = data.get('password')
-    
-    if not all([code, username, password]):
-        return jsonify({'success': False, 'error': 'Все поля обязательны'}), 400
-    
-    # Проверяем код
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT * FROM registration_codes 
-        WHERE code = ? AND is_active = 1
-    ''', (code,))
-    
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        return jsonify({'success': False, 'error': 'Недействительный код'}), 400
-    
-    # Проверка срока действия
-    if row['expires_at']:
-        expires_at = datetime.fromisoformat(row['expires_at'])
-        if datetime.now() > expires_at:
-            conn.close()
-            return jsonify({'success': False, 'error': 'Срок действия кода истёк'}), 400
-    
-    # Проверка количества использований
-    if row['current_uses'] >= row['max_uses']:
-        conn.close()
-        return jsonify({'success': False, 'error': 'Код достиг лимита использований'}), 400
-    
-    # Регистрируем пользователя в Synapse
-    success, result = register_user_on_synapse(username, password, SYNAPSE_ADMIN_ACCESS_TOKEN)
-    
-    if success:
-        # Увеличиваем счётчик использований
-        cursor.execute('''
-            UPDATE registration_codes 
-            SET current_uses = current_uses + 1 
-            WHERE code = ?
-        ''', (code,))
-        conn.commit()
-        
-        # Логируем успешную регистрацию
-        cursor.execute('''
-            INSERT INTO registration_logs (code, username, success)
-            VALUES (?, ?, 1)
-        ''', (code, username))
-        conn.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Регистрация успешна',
-            'user_id': f'@{username}:{SERVER_NAME}'
-        })
-    else:
-        # Логируем неудачную попытку
-        cursor.execute('''
-            INSERT INTO registration_logs (code, username, success)
-            VALUES (?, ?, 0)
-        ''', (code, username))
-        conn.commit()
-        
-        return jsonify({'success': False, 'error': result}), 400
-    finally:
-        conn.close()
+    registration_token = data.get('token')
 
-@app.route('/api/codes', methods=['GET'])
-def get_codes():
-    """Получение списка всех кодов (для админки)"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT * FROM registration_codes 
-        ORDER BY created_at DESC
-    ''')
-    
-    codes = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    
-    return jsonify({'codes': codes})
+    if not all([username, password, registration_token]):
+        return jsonify({"error": "Все поля обязательны: username, password, token"}), 400
 
-@app.route('/api/deactivate-code/<int:code_id>', methods=['POST'])
-def deactivate_code(code_id):
-    """Деактивация кода"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        UPDATE registration_codes 
-        SET is_active = 0 
-        WHERE id = ?
-    ''', (code_id,))
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'success': True})
+    try:
+        # Шаг 1: Начинаем регистрацию, чтобы получить session_id (если требуется)
+        # Отправляем пустой запрос для получения flows и session_id
+        start_resp = requests.post(f"{SYNAPSE_URL}/_matrix/client/v3/register", json={})
+        
+        session_id = None
+        if start_resp.status_code == 401:
+            session_id = start_resp.json().get("session")
+        
+        # Шаг 2: Формируем payload для регистрации
+        payload = {
+            "username": username,
+            "password": password,
+            "registration_token": registration_token,
+            "kind": "user",
+            "inhibit_login": False
+        }
+        
+        if session_id:
+            payload["session"] = session_id
 
-@app.route('/api/logs', methods=['GET'])
-def get_logs():
-    """Получение логов регистрации"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT * FROM registration_logs 
-        ORDER BY registered_at DESC
-        LIMIT 100
-    ''')
-    
-    logs = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    
-    return jsonify({'logs': logs})
+        # Шаг 3: Отправляем запрос на регистрацию
+        resp = requests.post(f"{SYNAPSE_URL}/_matrix/client/v3/register", json=payload)
+        
+        if resp.status_code == 200:
+            return jsonify({"success": True, "message": "Регистрация успешна!"})
+        elif resp.status_code == 401:
+            err_data = resp.json()
+            errcode = err_data.get("errcode", "M_UNKNOWN")
+            
+            if errcode == "M_INVALID_TOKEN":
+                return jsonify({"error": "Неверный или истекший регистрационный код"}), 403
+            elif errcode == "M_USER_IN_USE":
+                return jsonify({"error": "Пользователь с таким именем уже существует"}), 409
+            else:
+                return jsonify({"error": f"Ошибка регистрации: {errcode}"}), 400
+        else:
+            err_data = resp.json() if resp.text else {}
+            errcode = err_data.get("errcode", "M_UNKNOWN")
+            return jsonify({"error": f"Ошибка сервера: {errcode}"}), resp.status_code
+
+    except requests.exceptions.ConnectionError:
+        return jsonify({"error": "Нет соединения с сервером Matrix"}), 503
+    except Exception as e:
+        return jsonify({"error": f"Внутренняя ошибка: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000)

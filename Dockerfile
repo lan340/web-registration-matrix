@@ -10,16 +10,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 COPY templates/ ./templates/
 
-# Создание директории для данных (база данных)
-RUN mkdir -p /app/data
-
 # Порт приложения
 EXPOSE 5000
 
 # Переменные окружения по умолчанию
-ENV SYNAPSE_ADMIN_URL=http://synapse:8008
+ENV SYNAPSE_URL=http://synapse:8008
 ENV MATRIX_SERVER_NAME=localhost
-ENV DATABASE_URL=/app/data/codes.db
-ENV SECRET_KEY=change-me-in-production
+ENV FLASK_SECRET_KEY=change-me-in-production
 
-CMD ["python", "app.py"]
+# Запуск через gunicorn для production
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "app:app"]
